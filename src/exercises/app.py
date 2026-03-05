@@ -13,7 +13,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     repo_root = Path(__file__).resolve().parents[2]
     data_dir = repo_root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    default_db_path = data_dir / "app.db"
+    default_db_path = data_dir / "exercises.db"
 
     app.config.from_mapping(
         TESTING=False,
@@ -27,3 +27,4 @@ def create_app(test_config: dict | None = None) -> Flask:
     db.init_app(app)
     app.register_blueprint(api)
     return app
+

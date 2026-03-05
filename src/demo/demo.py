@@ -4,9 +4,9 @@ Run:
   python -m src.demo.demo
 """
 
-from src.flask_orm.app import create_app
-from src.flask_orm.extensions import db
-from src.flask_orm.models import Student, Grade, Assignment
+from src.demo.flask_orm.app import create_app
+from src.demo.flask_orm.extensions import db
+from src.demo.flask_orm.models import Student, Grade, Assignment
 
 
 def main() -> None:
