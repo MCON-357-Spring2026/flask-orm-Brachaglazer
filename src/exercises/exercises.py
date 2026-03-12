@@ -241,6 +241,17 @@ def students_with_average_above(threshold: float) -> list[Student]:
     List should be ordered by average percent descending.
     percent per grade = score / assignment.max_points * 100
     """
+    avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+    return (
+        db.session.query(Student)
+        .join(Grade)
+        .join(Assignment)
+        .group_by(Student.id)
+        .having(avg_expr > threshold)
+        .order_by(avg_expr.desc())
+        .all()
+    )
+    """
     my_list = []
     all_students = Student.query.all()
     for entry in all_students:
@@ -259,6 +270,7 @@ def students_with_average_above(threshold: float) -> list[Student]:
         if result >threshold:
             my_list.append(student)
     return my_list
+    """
 
 
 def assignments_without_grades() -> list[Assignment]:
