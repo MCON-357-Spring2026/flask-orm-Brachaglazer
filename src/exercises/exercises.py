@@ -5,6 +5,7 @@ Implement the TODO functions. Autograder will test them.
 
 from __future__ import annotations
 
+from flask import jsonify
 from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
@@ -22,12 +23,20 @@ def create_student(name: str, email: str) -> Student:
       - rollback
       - raise ValueError("duplicate email")
     """
-    raise NotImplementedError
+    student = Student(name=name, email=email)
+    db.session.add(student)
 
+    try:
+        db.session.commit()
+    except Exception:
+        raise ValueError("duplicate email")
+        db.session.rollback()
+    return student
 
 def find_student_by_email(email: str) -> Optional[Student]:
     """TODO: Return Student by email or None."""
-    raise NotImplementedError
+    student = Student.query.filter_by(email=email).first()
+    return student or None
 
 
 def add_grade(student_id: int, assignment_id: int, score: int) -> Grade:
@@ -37,7 +46,23 @@ def add_grade(student_id: int, assignment_id: int, score: int) -> Grade:
     If assignment doesn't exist: raise LookupError
     If duplicate grade: raise ValueError("duplicate grade")
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+
+    assignment = db.session.get(Assignment, assignment_id)
+    if not assignment:
+        raise LookupError
+
+    grade = Grade(score=score, student=student, assignment=assignment)
+    db.session.add(grade)
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        raise ValueError("duplicate grade")
+    return grade
 
 
 def average_percent(student_id: int) -> float:
@@ -48,19 +73,43 @@ def average_percent(student_id: int) -> float:
     If student doesn't exist: raise LookupError
     If student has no grades: return 0.0
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+
+    avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+    result = (
+        db.session.query(avg_expr)
+        .select_from(Grade)
+        .join(Assignment, Grade.assignment_id == Assignment.id)
+        .filter(Grade.student_id == student_id)
+        .scalar()
+    )
+    return float(result) if result is not None else 0.0
+    """
+    if not student.grades:
+        return 0.0
+    rows = db.session.query(Grade.score, Assignment.max_points)\
+        .join(Grade, Grade.assignment_id == Assignment.id)\
+        .filter(Grade.student_id == student_id)\
+        .all()
+    percent_per_grade = row.score / row.max_points * 100
+    return percent_per_grade
+    """
 
 
 # ===== QUERYING & FILTERING =====
 
 def get_all_students() -> list[Student]:
     """TODO: Return all students in database, ordered by name."""
-    raise NotImplementedError
+    students = Student.query.order_by(Student.name).all()
+    return students
 
 
 def get_assignment_by_title(title: str) -> Optional[Assignment]:
     """TODO: Return assignment by title or None."""
-    raise NotImplementedError
+    assignment = Assignment.query.filter_by(title=title).first()
+    return assignment or None
 
 
 def get_student_grades(student_id: int) -> list[Grade]:
@@ -68,7 +117,15 @@ def get_student_grades(student_id: int) -> list[Grade]:
 
     If student doesn't exist: raise LookupError
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+    return (
+        Grade.query.join(Assignment)
+        .filter(Grade.student_id == student.id)
+        .order_by(Assignment.title)
+        .all()
+    )
 
 
 def get_grades_for_assignment(assignment_id: int) -> list[Grade]:
@@ -76,14 +133,23 @@ def get_grades_for_assignment(assignment_id: int) -> list[Grade]:
 
     If assignment doesn't exist: raise LookupError
     """
-    raise NotImplementedError
+    assignment = db.session.get(Assignment, assignment_id)
+    if not assignment:
+        raise LookupError
+
+    return (
+        Grade.query.join(Student)
+        .filter(Grade.assignment_id == assignment.id)
+        .order_by(Student.name)
+        .all()
+    )
 
 
 # ===== AGGREGATION =====
 
 def total_student_grade_count() -> int:
     """TODO: Return total number of grades in database."""
-    raise NotImplementedError
+    return Grade.query.count()
 
 
 def highest_score_on_assignment(assignment_id: int) -> Optional[int]:
@@ -91,7 +157,12 @@ def highest_score_on_assignment(assignment_id: int) -> Optional[int]:
 
     If assignment doesn't exist: raise LookupError
     """
-    raise NotImplementedError
+    assignment = db.session.get(Assignment, assignment_id)
+    if not assignment:
+        raise LookupError
+    result = db.session.query(func.max(Grade.score)).filter(Grade.assignment_id == assignment_id).scalar()
+    return int(result) if result is not None else None
+
 
 
 def class_average_percent() -> float:
@@ -101,15 +172,28 @@ def class_average_percent() -> float:
     Return average of all these percents.
     If no grades: return 0.0
     """
-    raise NotImplementedError
+    avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+    result = (
+        db.session.query(avg_expr)
+        .select_from(Grade)
+        .join(Assignment, Grade.assignment_id == Assignment.id)
+        .scalar()
+    )
+    return float(result) if result is not None else 0.0
 
 
 def student_grade_count(student_id: int) -> int:
     """TODO: Return number of grades for a student.
 
     If student doesn't exist: raise LookupError
+
+    student = db.session.get(Student, student_id)
+    return len(student.grades)
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+    return Grade.query.filter_by(student_id=student_id).count()
 
 
 # ===== UPDATING & DELETION =====
@@ -121,7 +205,16 @@ def update_student_email(student_id: int, new_email: str) -> Student:
     If new email is duplicate: rollback and raise ValueError("duplicate email")
     Return the updated student.
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+    student.email = new_email
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        raise ValueError("duplicate email")
+    return student
 
 
 def delete_student(student_id: int) -> None:
@@ -129,7 +222,12 @@ def delete_student(student_id: int) -> None:
 
     If student doesn't exist: raise LookupError
     """
-    raise NotImplementedError
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+    db.session.delete(student)
+    db.session.commit()
+    return {}, 204
 
 
 def delete_grade(grade_id: int) -> None:
@@ -137,7 +235,12 @@ def delete_grade(grade_id: int) -> None:
 
     If grade doesn't exist: raise LookupError
     """
-    raise NotImplementedError
+    grade = db.session.get(Grade, grade_id)
+    if not grade:
+        raise LookupError
+    db.session.delete(grade)
+    db.session.commit()
+    return {}, 204
 
 
 # ===== FILTERING & FILTERING WITH AGGREGATION =====
@@ -148,12 +251,55 @@ def students_with_average_above(threshold: float) -> list[Student]:
     List should be ordered by average percent descending.
     percent per grade = score / assignment.max_points * 100
     """
-    raise NotImplementedError
+    avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+    return (
+        db.session.query(Student)
+        .join(Grade)
+        .join(Assignment)
+        .group_by(Student.id)
+        .having(avg_expr > threshold)
+        .order_by(avg_expr.desc())
+        .all()
+    )
+    """
+    my_list = []
+    all_students = Student.query.all()
+    for entry in all_students:
+        student = db.session.get(Student, entry.id)
+        if not student:
+            raise LookupError
+
+        avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+        result = (
+            db.session.query(avg_expr)
+            .select_from(Grade)
+            .join(Assignment, Grade.assignment_id == Assignment.id)
+            .filter(Grade.student_id == entry.id)
+            .scalar()
+        )
+        if result >threshold:
+            my_list.append(student)
+    return my_list
+    """
 
 
 def assignments_without_grades() -> list[Assignment]:
     """TODO: Return assignments that have no grades yet, ordered by title."""
-    raise NotImplementedError
+    return (
+        db.session.query(Assignment)
+        .outerjoin(Grade)
+        .filter(Grade.id.is_(None))
+        .order_by(Assignment.title)
+        .all()
+    )
+    """
+    all_assignments = Assignment.query.all()
+    my_list = []
+    for entry in all_assignments:
+        if not entry.grades:
+            my_list.append(entry)
+    return my_list
+    """
 
 
 def top_scorer_on_assignment(assignment_id: int) -> Optional[Student]:
@@ -163,5 +309,22 @@ def top_scorer_on_assignment(assignment_id: int) -> Optional[Student]:
     If no grades on assignment: return None
     If tie (multiple students with same high score): return any one
     """
-    raise NotImplementedError
-
+    assignment = db.session.get(Assignment, assignment_id)
+    if not assignment:
+        raise LookupError
+    """
+    if not assignment.grades:
+        return None
+    cursor = ( db.session.query(Assignment.grade, Grade.score)
+                .join(Assignment, Assignment.id == Grade.assignment_id)
+                .order_by(Grade.score.desc())
+                .all()
+            )
+    return cursor
+    """
+    top_grade = (
+        Grade.query.filter_by(assignment_id=assignment_id)
+        .order_by(Grade.score.desc())
+        .first()
+    )
+    return top_grade.student if top_grade else None
