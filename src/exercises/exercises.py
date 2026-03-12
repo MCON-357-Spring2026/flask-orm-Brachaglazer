@@ -54,7 +54,7 @@ def add_grade(student_id: int, assignment_id: int, score: int) -> Grade:
     if not assignment:
         raise LookupError
 
-    grade = Grade(score=score, student_id=student.id, assignment_id=assignment.id)
+    grade = Grade(score=score, student=student, assignment=assignment)
     db.session.add(grade)
 
     try:
@@ -275,12 +275,21 @@ def students_with_average_above(threshold: float) -> list[Student]:
 
 def assignments_without_grades() -> list[Assignment]:
     """TODO: Return assignments that have no grades yet, ordered by title."""
+    return (
+        db.session.query(Assignment)
+        .outerjoin(Grade)
+        .filter(Grade.id.is_(None))
+        .order_by(Assignment.title)
+        .all()
+    )
+    """
     all_assignments = Assignment.query.all()
     my_list = []
     for entry in all_assignments:
         if not entry.grades:
             my_list.append(entry)
     return my_list
+    """
 
 
 def top_scorer_on_assignment(assignment_id: int) -> Optional[Student]:
