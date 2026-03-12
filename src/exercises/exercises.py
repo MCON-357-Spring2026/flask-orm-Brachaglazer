@@ -103,7 +103,7 @@ def average_percent(student_id: int) -> float:
 def get_all_students() -> list[Student]:
     """TODO: Return all students in database, ordered by name."""
     students = Student.query.order_by(Student.name).all()
-    return jsonify([{"id": s.id, "name": s.name, "email": s.email} for s in students])
+    return students
 
 
 def get_assignment_by_title(title: str) -> Optional[Assignment]:
@@ -160,7 +160,7 @@ def highest_score_on_assignment(assignment_id: int) -> Optional[int]:
     assignment = db.session.get(Assignment, assignment_id)
     if not assignment:
         raise LookupError
-    result = db.session.query(func.max(Grade.score)).filter(Grade.assignment_id == assignment_id)
+    result = db.session.query(func.max(Grade.score)).filter(Grade.assignment_id == assignment_id).scalar()
     return int(result) if result is not None else None
 
 
@@ -172,16 +172,28 @@ def class_average_percent() -> float:
     Return average of all these percents.
     If no grades: return 0.0
     """
-    raise NotImplementedError
+    avg_expr = func.avg(Grade.score * 100.0 / Assignment.max_points)
+    result = (
+        db.session.query(avg_expr)
+        .select_from(Grade)
+        .join(Assignment, Grade.assignment_id == Assignment.id)
+        .scalar()
+    )
+    return float(result) if result is not None else 0.0
 
 
 def student_grade_count(student_id: int) -> int:
     """TODO: Return number of grades for a student.
 
     If student doesn't exist: raise LookupError
-    """
+
     student = db.session.get(Student, student_id)
     return len(student.grades)
+    """
+    student = db.session.get(Student, student_id)
+    if not student:
+        raise LookupError
+    return Grade.query.filter_by(student_id=student_id).count()
 
 
 # ===== UPDATING & DELETION =====
@@ -196,15 +208,13 @@ def update_student_email(student_id: int, new_email: str) -> Student:
     student = db.session.get(Student, student_id)
     if not student:
         raise LookupError
-    if student.email == new_email:
-        raise ValueError("duplicate email")
-    else:
-        student.email = new_email
+    student.email = new_email
     try:
         db.session.commit()
-    except Exception:
+    except IntegrityError:
         db.session.rollback()
-    return {"id": student.id, "name": student.name, "email": student.email}
+        raise ValueError("duplicate email")
+    return student
 
 
 def delete_student(student_id: int) -> None:
@@ -302,6 +312,7 @@ def top_scorer_on_assignment(assignment_id: int) -> Optional[Student]:
     assignment = db.session.get(Assignment, assignment_id)
     if not assignment:
         raise LookupError
+    """
     if not assignment.grades:
         return None
     cursor = ( db.session.query(Assignment.grade, Grade.score)
@@ -310,3 +321,10 @@ def top_scorer_on_assignment(assignment_id: int) -> Optional[Student]:
                 .all()
             )
     return cursor
+    """
+    top_grade = (
+        Grade.query.filter_by(assignment_id=assignment_id)
+        .order_by(Grade.score.desc())
+        .first()
+    )
+    return top_grade.student if top_grade else None
