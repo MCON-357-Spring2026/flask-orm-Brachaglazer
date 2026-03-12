@@ -29,9 +29,9 @@ def create_student(name: str, email: str) -> Student:
     try:
         db.session.commit()
     except Exception:
+        raise ValueError("duplicate email")
         db.session.rollback()
-        return {"error": "email must be unique"}, 400
-    return student.to_dict(), 201
+    return student
 
 def find_student_by_email(email: str) -> Optional[Student]:
     """TODO: Return Student by email or None."""
@@ -62,7 +62,7 @@ def add_grade(student_id: int, assignment_id: int, score: int) -> Grade:
     except IntegrityError:
         db.session.rollback()
         raise ValueError("duplicate grade")
-    return grade.to_dict(), 201
+    return grade
 
 
 def average_percent(student_id: int) -> float:
